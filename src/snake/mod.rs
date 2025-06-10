@@ -105,7 +105,8 @@ pub fn set_player_direction(
             direction_delta.x = 1.;
             direction_delta.y = 0.;
         }
-        if direction_delta.distance(snake_head.0) < 2. {
+        let dot = direction_delta.dot(snake_head.0);
+        if dot != -1. {
             snake_head.0 = direction_delta;
         }
     }
