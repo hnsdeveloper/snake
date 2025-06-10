@@ -1,7 +1,5 @@
 use bevy::{input::keyboard::KeyCode, prelude::*};
 
-use crate::snake::rng_resource::RngResource;
-
 pub mod atomic_counter_resource;
 pub mod rng_resource;
 pub mod snake_res_manager;
@@ -155,9 +153,6 @@ pub struct Apple;
 #[derive(Event)]
 pub struct AppleEaten;
 
-#[derive(Event)]
-pub struct SnakeGrow;
-
 #[derive(Resource, Default)]
 pub struct SnakeLast(Vec2);
 
@@ -165,25 +160,23 @@ pub fn check_eaten_apple(
     head: Single<&Transform, With<SnakeHead>>,
     apple: Option<Single<&Transform, (With<Apple>, Without<SnakeHead>)>>,
     mut apple_eaten_event: EventWriter<AppleEaten>,
-    mut snake_grow_event: EventWriter<SnakeGrow>,
 ) {
     if let Some(apple) = apple {
         if apple.translation == head.translation {
             apple_eaten_event.write(AppleEaten);
-            snake_grow_event.write(SnakeGrow);
         }
     }
 }
 
 pub fn spawn_snake_part(
     mut commands: Commands,
-    mut snake_grow_event: EventReader<SnakeGrow>,
+    mut apple_eaten_event: EventReader<AppleEaten>,
     snake_last: Res<SnakeLast>,
     snake_resources: Res<snake_res_manager::SnakeResourceManager>,
     rng: Res<rng_resource::RngResource>,
     id: Res<atomic_counter_resource::AtomicCounter>,
 ) {
-    if let Some(_) = snake_grow_event.read().last() {
+    if let Some(_) = apple_eaten_event.read().last() {
         commands.spawn((
             SnakePart(id.get_id()),
             Transform::from_translation(Vec3::new(snake_last.0.x, snake_last.0.y, INITIAL_Z)),
@@ -192,6 +185,23 @@ pub fn spawn_snake_part(
                 rng.random_in_range(0..(snake_resources.ball_materials_count() as u64)) as usize,
             )),
         ));
+    }
+}
+
+const MIN_HZ: f64 = 10.;
+const MAX_HZ: f64 = 30.;
+
+pub fn increase_fixed_update(
+    snake_parts: Query<&SnakePart>,
+    mut apple_eaten_event: EventReader<AppleEaten>,
+    mut time: ResMut<Time<Fixed>>,
+) {
+    if let Some(_) = apple_eaten_event.read().last() {
+        let parts = snake_parts.iter().count() as f64;
+        let log_parts = parts.log2();
+        let mut hz = (10. + log_parts * 2.).next_up();
+        hz = hz.clamp(MIN_HZ, MAX_HZ);
+        time.set_timestep_hz(hz);
     }
 }
 
@@ -216,7 +226,7 @@ pub fn spawn_apple(
         'outer: loop {
             let x = rng.random_in_range(0..PLAY_SIDE as u64) as f32 - HALF_PLAY_SIDE;
             let y = rng.random_in_range(0..PLAY_SIDE as u64) as f32 - HALF_PLAY_SIDE;
-            for (transform) in snake_parts {
+            for transform in snake_parts {
                 if transform.translation.x == x && transform.translation.y == y {
                     continue 'outer;
                 }

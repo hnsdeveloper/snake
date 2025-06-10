@@ -9,21 +9,23 @@ fn main() {
         .init_resource::<snake::atomic_counter_resource::AtomicCounter>()
         .add_systems(Startup, snake::spawn_map)
         .add_systems(Startup, snake::spawn_head)
+        .insert_resource(Time::<Fixed>::from_hz(10.))
         .add_systems(
-            Update,
-            (
-                snake::set_player_direction,
-                snake::move_player
-                    .after(snake::set_player_direction)
-                    .before(snake::check_eaten_apple),
-            ),
+            FixedUpdate,
+            snake::move_player
+                .after(snake::set_player_direction)
+                .before(snake::check_eaten_apple),
         )
+        .add_systems(Update, snake::set_player_direction)
         .add_event::<snake::AppleEaten>()
-        .add_event::<snake::SnakeGrow>()
         .init_resource::<snake::SnakeLast>()
         .add_systems(
             Update,
             snake::check_eaten_apple.before(snake::despawn_apple),
+        )
+        .add_systems(
+            Update,
+            snake::increase_fixed_update.after(snake::check_eaten_apple),
         )
         .add_systems(Update, snake::spawn_snake_part.after(snake::move_player))
         .add_systems(Update, (snake::despawn_apple, snake::spawn_apple))
