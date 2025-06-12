@@ -1,10 +1,16 @@
 use bevy::prelude::*;
 
 #[derive(States, Default, Debug, Clone, PartialEq, Eq, Hash)]
-pub enum State {
+pub enum GameState {
     #[default]
     Main,
     Gameplay,
     Gameover,
-    Pause,
+}
+
+#[derive(States, Default, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum GameplayState {
+    #[default]
+    Running,
+    Paused,
 }

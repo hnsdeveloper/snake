@@ -5,6 +5,7 @@ fn main() {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins)
         .add_plugins(snake::SnakeInitializePlugin)
-        .add_plugins(snake::SnakeGameplayPlugin)
+        .add_plugins(snake::GameplayPlugin)
+        .add_plugins(snake::GameOverPlugin)
         .run();
 }

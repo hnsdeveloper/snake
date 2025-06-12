@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 
-pub struct SnakeGameplayPlugin;
+pub struct GameplayPlugin;
 
-impl Plugin for SnakeGameplayPlugin {
+impl Plugin for GameplayPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<super::SnakeResourceManager>()
             .init_resource::<super::RngResource>()
@@ -10,7 +10,7 @@ impl Plugin for SnakeGameplayPlugin {
             .init_resource::<SnakeLast>()
             .add_event::<AppleEaten>()
             .add_systems(
-                OnEnter(super::State::Gameplay),
+                OnEnter(super::GameState::Gameplay),
                 (spawn_map, spawn_head, initialize_fixed_step),
             )
             .add_systems(
@@ -18,8 +18,9 @@ impl Plugin for SnakeGameplayPlugin {
                 move_player
                     .after(process_input)
                     .before(check_eaten_apple)
-                    .run_if(in_state(super::State::Gameplay))
-                    .run_if(no_collision),
+                    .run_if(in_state(super::GameState::Gameplay))
+                    .run_if(not(collision))
+                    .run_if(not(in_state(super::GameplayState::Paused))),
             )
             .add_systems(
                 Update,
@@ -30,8 +31,10 @@ impl Plugin for SnakeGameplayPlugin {
                     spawn_snake_part.after(move_player),
                     (despawn_apple, spawn_apple),
                 )
-                    .run_if(in_state(super::State::Gameplay)),
-            );
+                    .run_if(in_state(super::GameState::Gameplay))
+                    .run_if(not(in_state(super::GameplayState::Paused))),
+            )
+            .add_systems(OnExit(super::GameState::Gameplay), despawn_all);
     }
 }
 
@@ -41,17 +44,17 @@ pub struct SnakeHead(Vec2);
 #[derive(Component)]
 pub struct SnakePart(usize);
 
-const PLAY_SIDE: f32 = 30.;
+pub const PLAY_SIDE: f32 = 30.;
 const HALF_PLAY_SIDE: f32 = PLAY_SIDE / 2.;
 const INITIAL_Z: f32 = -50.;
 const MIN_HZ: f64 = 10.;
 const MAX_HZ: f64 = 30.;
 
-pub fn initialize_fixed_step(mut fixed_time: ResMut<Time<Fixed>>) {
+fn initialize_fixed_step(mut fixed_time: ResMut<Time<Fixed>>) {
     fixed_time.set_timestep_hz(MIN_HZ);
 }
 
-pub fn spawn_head(
+fn spawn_head(
     mut commands: Commands,
     snake_resources: Res<super::SnakeResourceManager>,
     rng: Res<super::RngResource>,
@@ -85,7 +88,7 @@ fn is_inside(x: i32, y: i32, side: i32) -> bool {
     true
 }
 
-pub fn spawn_map(
+fn spawn_map(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -115,7 +118,11 @@ pub fn spawn_map(
     }
 }
 
-pub fn process_input(mut snake_head: Single<&mut SnakeHead>, input: Res<ButtonInput<KeyCode>>) {
+fn process_input(
+    mut snake_head: Single<&mut SnakeHead>,
+    input: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
+) {
     let mut direction_delta = snake_head.0;
     let pressed_count = input.get_pressed().count();
     if pressed_count == 1 {
@@ -142,7 +149,7 @@ pub fn process_input(mut snake_head: Single<&mut SnakeHead>, input: Res<ButtonIn
     }
 }
 
-pub fn no_collision(
+pub fn collision(
     head: Single<&SnakeHead>,
     parts: Query<(&Transform, &SnakePart)>,
     collidable_others: Query<
@@ -173,18 +180,18 @@ pub fn no_collision(
     }
     for l in v[1..].iter() {
         if *l == v[0] {
-            return false;
+            return true;
         }
     }
     for collidable in collidable_others {
         if collidable.translation.truncate() == v[0] {
-            return false;
+            return true;
         }
     }
-    true
+    false
 }
 
-pub fn move_player(
+fn move_player(
     head: Single<&SnakeHead>,
     parts: Query<(&mut Transform, &SnakePart)>,
     mut last_part: ResMut<SnakeLast>,
@@ -213,12 +220,12 @@ pub fn move_player(
 pub struct Apple;
 
 #[derive(Event)]
-pub struct AppleEaten;
+struct AppleEaten;
 
 #[derive(Resource, Default)]
-pub struct SnakeLast(Vec2);
+struct SnakeLast(Vec2);
 
-pub fn check_eaten_apple(
+fn check_eaten_apple(
     head: Single<&Transform, With<SnakeHead>>,
     apple: Option<Single<&Transform, (With<Apple>, Without<SnakeHead>)>>,
     mut apple_eaten_event: EventWriter<AppleEaten>,
@@ -230,7 +237,7 @@ pub fn check_eaten_apple(
     }
 }
 
-pub fn spawn_snake_part(
+fn spawn_snake_part(
     mut commands: Commands,
     mut apple_eaten_event: EventReader<AppleEaten>,
     snake_last: Res<SnakeLast>,
@@ -250,7 +257,7 @@ pub fn spawn_snake_part(
     }
 }
 
-pub fn increase_fixed_update(
+fn increase_fixed_update(
     snake_parts: Query<&SnakePart>,
     mut apple_eaten_event: EventReader<AppleEaten>,
     mut time: ResMut<Time<Fixed>>,
@@ -264,7 +271,7 @@ pub fn increase_fixed_update(
     }
 }
 
-pub fn despawn_apple(
+fn despawn_apple(
     mut commands: Commands,
     mut apple_eaten_event: EventReader<AppleEaten>,
     apple: Single<Entity, With<Apple>>,
@@ -274,7 +281,7 @@ pub fn despawn_apple(
     }
 }
 
-pub fn spawn_apple(
+fn spawn_apple(
     mut commands: Commands,
     apple: Option<Single<(Entity, &Apple)>>,
     snake_parts: Query<&Transform, With<SnakePart>>,
@@ -299,4 +306,17 @@ pub fn spawn_apple(
             break;
         }
     }
+}
+
+fn despawn_all(
+    mut commands: Commands,
+    all: Query<(Entity, &Transform)>,
+    camera: Single<Entity, With<Camera3d>>,
+) {
+    for (entity, transform) in all {
+        if transform.translation.z == INITIAL_Z {
+            commands.entity(entity).despawn();
+        }
+    }
+    commands.entity(*camera).despawn();
 }
