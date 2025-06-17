@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{platform::collections::HashSet, prelude::*};
 
 pub struct GameplayPlugin;
 
@@ -29,7 +29,8 @@ impl Plugin for GameplayPlugin {
                     check_eaten_apple.before(despawn_apple),
                     increase_fixed_update.after(check_eaten_apple),
                     spawn_snake_part.after(move_player),
-                    (despawn_apple, spawn_apple),
+                    despawn_apple,
+                    spawn_apple.after(spawn_snake_part),
                 )
                     .run_if(in_state(super::GameState::Gameplay))
                     .run_if(not(in_state(super::GameplayState::Paused))),
@@ -118,11 +119,7 @@ fn spawn_map(
     }
 }
 
-fn process_input(
-    mut snake_head: Single<&mut SnakeHead>,
-    input: Res<ButtonInput<KeyCode>>,
-    time: Res<Time>,
-) {
+fn process_input(mut snake_head: Single<&mut SnakeHead>, input: Res<ButtonInput<KeyCode>>) {
     let mut direction_delta = snake_head.0;
     let pressed_count = input.get_pressed().count();
     if pressed_count == 1 {
@@ -196,7 +193,9 @@ fn move_player(
     parts: Query<(&mut Transform, &SnakePart)>,
     mut last_part: ResMut<SnakeLast>,
 ) {
+    // Small N for snake_parts, thus it is not an issue to sort it every frame
     let mut v = Vec::new();
+    v.reserve_exact(parts.iter().count());
     for (t, s) in parts {
         v.push((s.0, t));
     }
@@ -288,23 +287,39 @@ fn spawn_apple(
     rng: Res<super::RngResource>,
     snake_resources: Res<super::SnakeResourceManager>,
 ) {
-    if let None = apple {
-        'outer: loop {
-            let x = rng.random_in_range(0..PLAY_SIDE as u64) as f32 - HALF_PLAY_SIDE;
-            let y = rng.random_in_range(0..PLAY_SIDE as u64) as f32 - HALF_PLAY_SIDE;
-            for transform in snake_parts {
-                if transform.translation.x == x && transform.translation.y == y {
-                    continue 'outer;
-                }
+    if apple.is_none() {
+        let mut all_pos_vec = Vec::new();
+        for i in (0..=PLAY_SIDE as u64) {
+            for j in (0..=PLAY_SIDE as u64) {
+                all_pos_vec.push(Vec3::new(
+                    i as f32 - HALF_PLAY_SIDE,
+                    j as f32 - HALF_PLAY_SIDE,
+                    INITIAL_Z,
+                ));
             }
-            commands.spawn((
-                Apple,
-                Transform::from_translation(Vec3::new(x, y, INITIAL_Z)),
-                Mesh3d(snake_resources.apple_mesh()),
-                MeshMaterial3d(snake_resources.apple_materials(0)),
-            ));
-            break;
         }
+        let mut snake_parts_vec = Vec::new();
+        for part in snake_parts {
+            snake_parts_vec.push(part.translation);
+        }
+        // O(m*n)
+        let available_spots: Vec<_> = all_pos_vec
+            .into_iter()
+            .filter(|pos| {
+                if snake_parts_vec.contains(pos) {
+                    return false;
+                }
+                return true;
+            })
+            .collect();
+        commands.spawn((
+            Apple,
+            Transform::from_translation(
+                available_spots[rng.random_in_range(0..available_spots.len() as u64) as usize],
+            ),
+            Mesh3d(snake_resources.apple_mesh()),
+            MeshMaterial3d(snake_resources.apple_materials(0)),
+        ));
     }
 }
 
