@@ -31,6 +31,7 @@ impl Plugin for GameplayPlugin {
                     spawn_snake_part.after(move_player),
                     despawn_apple,
                     spawn_apple.after(spawn_snake_part),
+                    check_game_over.after(move_player).after(spawn_snake_part),
                 )
                     .run_if(in_state(super::GameState::Gameplay))
                     .run_if(not(in_state(super::GameplayState::Paused))),
@@ -320,6 +321,27 @@ fn spawn_apple(
             Mesh3d(snake_resources.apple_mesh()),
             MeshMaterial3d(snake_resources.apple_materials(0)),
         ));
+    }
+}
+
+fn check_game_over(
+    head: Single<&SnakeHead>,
+    parts: Query<(&Transform, &SnakePart)>,
+    collidable_others: Query<
+        &Transform,
+        (
+            Without<Apple>,
+            Without<SnakePart>,
+            Without<DirectionalLight>,
+            Without<Camera3d>,
+        ),
+    >,
+    mut next_state: ResMut<NextState<super::GameState>>,
+) {
+    let parts_count = parts.iter().count();
+    let collision = collision(head, parts, collidable_others);
+    if (parts_count == PLAY_SIDE.powi(2) as usize) || collision {
+        next_state.set(super::GameState::Gameover);
     }
 }
 
